@@ -8,6 +8,8 @@ import CourseDetails from './pages/CourseDetails';
 import CodingPractice from './pages/CodingPractice';
 import QuizPage from './pages/QuizPage';
 import Profile from './pages/Profile';
+import StudentSessionView from './pages/StudentSessionView';
+import TeacherSessionView from './pages/TeacherSessionView';
 
 // Route protection wrapper
 const ProtectedRoute = ({ children }) => {
@@ -112,6 +114,24 @@ function App() {
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Session Routes — Full Screen, no dashboard wrapper */}
+          <Route
+            path="/session/student/:id"
+            element={
+              <ProtectedRoute>
+                <StudentSessionView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/session/teacher/:id"
+            element={
+              <ProtectedRoute>
+                <TeacherSessionView />
               </ProtectedRoute>
             }
           />

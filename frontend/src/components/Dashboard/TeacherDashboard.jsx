@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   PlusCircle, 
@@ -11,7 +11,12 @@ import {
   CheckCircle,
   Eye,
   AlertCircle,
-  Award
+  Award,
+  ShieldCheck,
+  Copy,
+  CheckCheck,
+  Play,
+  Square
 } from 'lucide-react';
 
 const TeacherDashboard = () => {
@@ -25,6 +30,19 @@ const TeacherDashboard = () => {
   const [showCourseForm, setShowCourseForm] = useState(false);
   const [showAssignmentForm, setShowAssignmentForm] = useState(false);
   const [showQuizForm, setShowQuizForm] = useState(false);
+  const [showSessionForm, setShowSessionForm] = useState(false);
+
+  // Session state
+  const [sessions, setSessions] = useState([]);
+  const [sessionTitle, setSessionTitle] = useState('');
+  const [sessionCourseId, setSessionCourseId] = useState('');
+  const [sessionDuration, setSessionDuration] = useState(60);
+  const [sessionPassword, setSessionPassword] = useState('');
+  const [sessionBlacklistedApps, setSessionBlacklistedApps] = useState('chrome, discord, vscode');
+  const [sessionBlacklistedKeywords, setSessionBlacklistedKeywords] = useState('chatgpt, stackoverflow, solution');
+  const [sessionBehavioral, setSessionBehavioral] = useState(true);
+  const [copiedId, setCopiedId] = useState(null);
+  const navigate = useNavigate();
 
   // Form inputs
   const [courseTitle, setCourseTitle] = useState('');
@@ -57,6 +75,15 @@ const TeacherDashboard = () => {
       setCourses(courseRes.data);
       if (courseRes.data.length > 0) {
         setSelectedCourseId(courseRes.data[0]._id);
+        setSessionCourseId(courseRes.data[0]._id);
+      }
+
+      // Fetch monitoring sessions
+      try {
+        const sessionRes = await axios.get('/api/sessions');
+        setSessions(sessionRes.data);
+      } catch (_) {
+        // sessions may not exist yet
       }
 
       // Fetch submissions for all teacher's courses
@@ -230,6 +257,52 @@ const TeacherDashboard = () => {
     }
   };
 
+  const handleCreateSession = async (e) => {
+    e.preventDefault();
+    if (!sessionTitle || !sessionCourseId) {
+      setError('Please provide a session title and select a course.');
+      return;
+    }
+    try {
+      await axios.post('/api/sessions', {
+        title: sessionTitle,
+        course: sessionCourseId,
+        durationMinutes: sessionDuration,
+        sessionPassword: sessionPassword,
+        blacklistedApps: sessionBlacklistedApps,
+        blacklistedKeywords: sessionBlacklistedKeywords,
+        behavioralMonitoring: sessionBehavioral,
+      });
+      setMessage('Monitoring session created successfully!');
+      setSessionTitle('');
+      setSessionDuration(60);
+      setSessionPassword('');
+      setSessionBlacklistedApps('chrome, discord, vscode');
+      setSessionBlacklistedKeywords('chatgpt, stackoverflow, solution');
+      setSessionBehavioral(true);
+      setShowSessionForm(false);
+      fetchTeacherData();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to create session');
+    }
+  };
+
+  const handleCopyId = (id) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleUpdateStatus = async (sessionId, newStatus) => {
+    try {
+      await axios.patch(`/api/sessions/${sessionId}/status`, { status: newStatus });
+      fetchTeacherData();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update session status');
+    }
+  };
+
   // Calculate stats
   const totalStudents = courses.reduce((sum, c) => sum + (c.studentsEnrolled?.length || 0), 0);
 
@@ -251,7 +324,7 @@ const TeacherDashboard = () => {
         </div>
         
         {/* Creator shortcuts */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button
             onClick={() => { setShowCourseForm(true); setError(''); }}
             className="flex items-center gap-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950/40 hover:bg-brand-100 dark:hover:bg-brand-900/50 px-4 py-2.5 rounded-xl border border-brand-100 dark:border-brand-900/30 transition-all"
@@ -276,6 +349,15 @@ const TeacherDashboard = () => {
           >
             <HelpCircle size={16} />
             <span>New Quiz</span>
+          </button>
+
+          <button
+            onClick={() => { setShowSessionForm(true); setError(''); }}
+            className="flex items-center gap-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 hover:bg-violet-100 dark:hover:bg-violet-900/50 px-4 py-2.5 rounded-xl border border-violet-100 dark:border-violet-900/30 transition-all"
+            disabled={courses.length === 0}
+          >
+            <ShieldCheck size={16} />
+            <span>New Session</span>
           </button>
         </div>
       </div>
@@ -331,7 +413,7 @@ const TeacherDashboard = () => {
 
       {/* Tabs */}
       <div className="border-b border-slate-200 dark:border-slate-800 flex gap-6">
-        {['courses', 'coding-submissions', 'quiz-grades'].map(tab => (
+        {['courses', 'coding-submissions', 'quiz-grades', 'sessions'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -341,7 +423,17 @@ const TeacherDashboard = () => {
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
-            {tab.replace('-', ' ')}
+            {tab === 'sessions' ? (
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck size={14} />
+                Monitoring Sessions
+                {sessions.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 rounded-full text-[10px] font-black">
+                    {sessions.length}
+                  </span>
+                )}
+              </span>
+            ) : tab.replace('-', ' ')}
           </button>
         ))}
       </div>
@@ -486,6 +578,149 @@ const TeacherDashboard = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Sessions Tab */}
+      {activeTab === 'sessions' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">Monitoring Sessions</h3>
+            <button
+              onClick={() => { setShowSessionForm(true); setError(''); }}
+              className="flex items-center gap-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 hover:bg-violet-100 px-3 py-2 rounded-xl border border-violet-100 dark:border-violet-900/30 transition-all"
+              disabled={courses.length === 0}
+            >
+              <ShieldCheck size={14} />
+              New Session
+            </button>
+          </div>
+
+          {sessions.length === 0 ? (
+            <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <ShieldCheck size={40} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+              <p className="text-slate-400 text-sm">No monitoring sessions yet.</p>
+              <button
+                onClick={() => setShowSessionForm(true)}
+                className="mt-3 text-xs font-bold text-violet-600 hover:underline"
+              >
+                Create your first session
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {sessions.map(s => (
+                <div key={s._id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 space-y-4 hover:shadow-md transition-all">
+                  {/* Header */}
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 dark:text-white">{s.title}</h4>
+                      <p className="text-xs text-slate-400 mt-0.5">{s.course?.title}</p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                      s.status === 'active'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/30'
+                        : s.status === 'ended'
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+                        : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-900/30'
+                    }`}>
+                      {s.status === 'active' ? '● LIVE' : s.status === 'ended' ? 'Ended' : '○ Pending'}
+                    </span>
+                  </div>
+
+                  {/* Stats row */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-2">
+                      <p className="text-xs font-bold text-slate-400">Students</p>
+                      <p className="text-lg font-black text-slate-800 dark:text-white">{s.enrolledStudents?.length || 0}</p>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-2">
+                      <p className="text-xs font-bold text-slate-400">Duration</p>
+                      <p className="text-lg font-black text-slate-800 dark:text-white">{s.durationMinutes}m</p>
+                    </div>
+                    <div className={`rounded-xl p-2 ${
+                      s.behavioralMonitoring
+                        ? 'bg-violet-50 dark:bg-violet-950/30'
+                        : 'bg-slate-50 dark:bg-slate-800/50'
+                    }`}>
+                      <p className="text-xs font-bold text-slate-400">Biometrics</p>
+                      <p className={`text-xs font-black mt-1 ${
+                        s.behavioralMonitoring
+                          ? 'text-violet-600 dark:text-violet-400'
+                          : 'text-slate-500'
+                      }`}>{s.behavioralMonitoring ? '✓ ON' : '✗ OFF'}</p>
+                    </div>
+                  </div>
+
+                  {/* Blacklists */}
+                  {(s.blacklistedApps?.length > 0 || s.blacklistedKeywords?.length > 0) && (
+                    <div className="space-y-1.5">
+                      {s.blacklistedApps?.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Apps:</span>
+                          {s.blacklistedApps.map((app, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded text-[10px] font-semibold">{app}</span>
+                          ))}
+                        </div>
+                      )}
+                      {s.blacklistedKeywords?.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Keywords:</span>
+                          {s.blacklistedKeywords.map((kw, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 rounded text-[10px] font-semibold">{kw}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Footer actions */}
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                    {/* Copy Session ID */}
+                    <button
+                      onClick={() => handleCopyId(s._id)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                      title="Copy Session ID for SentryClass agent"
+                    >
+                      {copiedId === s._id ? <CheckCheck size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                      {copiedId === s._id ? 'Copied!' : 'Copy Session ID'}
+                    </button>
+
+                    {/* Status controls */}
+                    <div className="flex gap-2">
+                      {s.status === 'pending' && (
+                        <button
+                          onClick={() => handleUpdateStatus(s._id, 'active')}
+                          className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors"
+                        >
+                          <Play size={12} /> Start
+                        </button>
+                      )}
+                      {s.status === 'active' && (
+                        <>
+                          <button
+                            onClick={() => navigate(`/session/teacher/${s._id}`)}
+                            className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors"
+                          >
+                            <Eye size={12} /> Watch Live
+                          </button>
+                          <button
+                            onClick={() => handleUpdateStatus(s._id, 'ended')}
+                            className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition-colors"
+                          >
+                            <Square size={12} /> End
+                          </button>
+                        </>
+                      )}
+                      {s.status === 'ended' && (
+                        <span className="text-xs text-slate-400 font-semibold">Session completed</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -823,6 +1058,157 @@ const TeacherDashboard = () => {
                   className="px-4 py-2 bg-amber-650 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold"
                 >
                   Publish Quiz
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Create Monitoring Session */}
+      {showSessionForm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 max-w-lg w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-5 my-8">
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-950/40 flex items-center justify-center text-violet-600 dark:text-violet-400">
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-xl text-slate-900 dark:text-white">Create Monitoring Session</h3>
+                <p className="text-xs text-slate-400 mt-0.5">SentryClass will use this session's ID to connect</p>
+              </div>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 text-rose-600 text-xs rounded-lg flex items-center gap-1.5">
+                <AlertCircle size={14} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateSession} className="space-y-4">
+              {/* Session Title */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Session Name</label>
+                <input
+                  type="text"
+                  required
+                  value={sessionTitle}
+                  onChange={(e) => setSessionTitle(e.target.value)}
+                  placeholder="Midterm Practical Exam — Batch A"
+                  className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-250 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                />
+              </div>
+
+              {/* Course + Duration row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Link to Course</label>
+                  <select
+                    value={sessionCourseId}
+                    onChange={(e) => setSessionCourseId(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-250 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                  >
+                    {courses.map(c => <option key={c._id} value={c._id}>{c.title} ({c.studentsEnrolled?.length || 0} students)</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Duration (Minutes)</label>
+                  <input
+                    type="number"
+                    required
+                    min={5}
+                    max={300}
+                    value={sessionDuration}
+                    onChange={(e) => setSessionDuration(Number(e.target.value))}
+                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-250 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                  />
+                </div>
+              </div>
+
+              {/* Session Password */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Session Password <span className="font-normal normal-case text-slate-300">(leave blank for no password)</span></label>
+                <input
+                  type="password"
+                  value={sessionPassword}
+                  onChange={(e) => setSessionPassword(e.target.value)}
+                  placeholder="e.g. exam2025"
+                  className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-250 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                />
+              </div>
+
+              {/* Blacklisted Apps */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Blacklisted Apps <span className="font-normal normal-case text-slate-300">(comma-separated)</span></label>
+                <input
+                  type="text"
+                  value={sessionBlacklistedApps}
+                  onChange={(e) => setSessionBlacklistedApps(e.target.value)}
+                  placeholder="chrome, discord, vscode"
+                  className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-250 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                />
+                <p className="text-[10px] text-slate-400">SentryClass will flag any student whose active window title contains these words.</p>
+              </div>
+
+              {/* Blacklisted Keywords */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Blacklisted OCR Keywords <span className="font-normal normal-case text-slate-300">(comma-separated)</span></label>
+                <input
+                  type="text"
+                  value={sessionBlacklistedKeywords}
+                  onChange={(e) => setSessionBlacklistedKeywords(e.target.value)}
+                  placeholder="chatgpt, stackoverflow, solution"
+                  className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-250 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                />
+                <p className="text-[10px] text-slate-400">SentryClass OCR scanner will alert if these words appear on any student screen.</p>
+              </div>
+
+              {/* Behavioral Monitoring Toggle */}
+              <div className="flex items-center justify-between p-3 bg-violet-50 dark:bg-violet-950/20 rounded-xl border border-violet-100 dark:border-violet-900/30">
+                <div>
+                  <p className="text-sm font-bold text-violet-700 dark:text-violet-300">Behavioral Biometrics Monitoring</p>
+                  <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">On-device Isolation Forest detects identity substitution</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSessionBehavioral(!sessionBehavioral)}
+                  className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none ${
+                    sessionBehavioral ? 'bg-violet-600' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                    sessionBehavioral ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Auto-enrolled students hint */}
+              {sessionCourseId && (
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                  <Users size={13} className="mt-0.5 shrink-0" />
+                  <span>
+                    <strong>{courses.find(c => c._id === sessionCourseId)?.studentsEnrolled?.length || 0} students</strong> enrolled in this course will be automatically authorized for this session.
+                  </span>
+                </div>
+              )}
+
+              {/* Footer buttons */}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSessionForm(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-850 hover:bg-slate-50 rounded-lg text-xs font-semibold text-slate-500 dark:text-slate-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                >
+                  <ShieldCheck size={14} />
+                  Create Session
                 </button>
               </div>
             </form>

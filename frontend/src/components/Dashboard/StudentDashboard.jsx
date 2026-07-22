@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { 
@@ -10,7 +10,13 @@ import {
   ChevronRight, 
   CheckCircle, 
   ArrowRight,
-  TrendingUp
+  TrendingUp,
+  ShieldCheck,
+  LogIn,
+  Clock,
+  X,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import {
   AreaChart,
@@ -24,6 +30,7 @@ import {
 
 const StudentDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [enrolledCourses, setEnrolledCourses] = useState([]);
   const [availableCourses, setAvailableCourses] = useState([]);
@@ -36,6 +43,15 @@ const StudentDashboard = () => {
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+
+  // Sessions state
+  const [liveSessions, setLiveSessions] = useState([]);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinSessionId, setJoinSessionId] = useState('');
+  const [joinPassword, setJoinPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [joinError, setJoinError] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
 
   const fetchDashboardData = async () => {
     try {
@@ -51,6 +67,17 @@ const StudentDashboard = () => {
       const available = allCourses.filter(c => 
         !c.studentsEnrolled?.includes(user._id)
       );
+
+      setEnrolledCourses(enrolled);
+      setAvailableCourses(available);
+
+      // Fetch live sessions for enrolled courses
+      try {
+        const sessRes = await axios.get('/api/sessions/student');
+        setLiveSessions(sessRes.data);
+      } catch (_) {
+        // sessions endpoint may not be available
+      }
 
       setEnrolledCourses(enrolled);
       setAvailableCourses(available);
@@ -147,6 +174,25 @@ const StudentDashboard = () => {
     } catch (err) {
       setMessage(err.response?.data?.message || 'Enrollment failed');
       setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  const handleJoinSession = async (e) => {
+    e.preventDefault();
+    if (!joinSessionId.trim()) { setJoinError('Please enter a Session ID'); return; }
+    setJoinLoading(true);
+    setJoinError('');
+    try {
+      const res = await axios.post(`/api/sessions/${joinSessionId.trim()}/join`, {
+        password: joinPassword,
+      });
+      // Store session info so StudentSessionView can use it without re-fetching
+      localStorage.setItem(`session_${joinSessionId.trim()}`, JSON.stringify(res.data));
+      navigate(`/session/student/${joinSessionId.trim()}`);
+    } catch (err) {
+      setJoinError(err.response?.data?.message || 'Failed to join session');
+    } finally {
+      setJoinLoading(false);
     }
   };
 
@@ -289,6 +335,129 @@ const StudentDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Live Sessions Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <ShieldCheck size={20} className="text-violet-500" />
+            Live Sessions
+            {liveSessions.some(s => s.status === 'active') && (
+              <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full text-xs font-bold animate-pulse">LIVE</span>
+            )}
+          </h3>
+        </div>
+
+        {liveSessions.length === 0 ? (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center">
+            <ShieldCheck size={36} className="mx-auto text-slate-300 dark:text-slate-700 mb-3" />
+            <p className="text-slate-400 text-sm">No active sessions for your enrolled courses.</p>
+            <p className="text-slate-400 text-xs mt-1">Your teacher will start a session before the exam.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {liveSessions.map(s => (
+              <div key={s._id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 hover:shadow-md transition-all space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white">{s.title}</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">{s.course?.title}</p>
+                  </div>
+                  <span className={`flex-shrink-0 px-2 py-1 rounded-full text-xs font-bold ${
+                    s.status === 'active'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 border border-emerald-100 dark:border-emerald-900/30'
+                      : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 border border-amber-100 dark:border-amber-900/30'
+                  }`}>
+                    {s.status === 'active' ? '● LIVE' : '○ Upcoming'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                  <span className="flex items-center gap-1"><Clock size={12} /> {s.durationMinutes}m</span>
+                  <span>By {s.teacher?.name}</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setJoinSessionId(s._id);
+                    setShowJoinModal(true);
+                    setJoinError('');
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-colors"
+                >
+                  <LogIn size={14} /> Join Session
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Join Modal */}
+      {showJoinModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 space-y-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-950/40 flex items-center justify-center text-violet-600">
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-lg text-slate-900 dark:text-white">Join Session</h3>
+                <p className="text-xs text-slate-400">Enter the session password to join</p>
+              </div>
+              <button onClick={() => setShowJoinModal(false)} className="ml-auto text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            {joinError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 text-rose-600 text-xs rounded-lg">
+                {joinError}
+              </div>
+            )}
+
+            <form onSubmit={handleJoinSession} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Session Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={joinPassword}
+                    onChange={e => setJoinPassword(e.target.value)}
+                    placeholder="Enter password (if required)"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(p => !p)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowJoinModal(false)}
+                  className="flex-1 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={joinLoading}
+                  className="flex-1 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors"
+                >
+                  {joinLoading ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <><LogIn size={14} /> Join Now</>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Courses Catalog Section */}
       <div className="space-y-4">
